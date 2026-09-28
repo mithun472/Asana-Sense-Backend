@@ -51,6 +51,101 @@
 | 🪑 Chair Pose | 🐍 Cobra Pose | 🐕 Downward-Facing Dog |
 | 🕯️ Shoulder Stand | 🔺 Triangle Pose | 🌳 Tree Pose |
 | 🦅 Warrior III | | |
+
+### 🤖 3. AI Report Generation
+- **Groq Llama 3.3 70B** synthesizes accuracy, hold time and past sessions into an encouraging, understandable report.
+- **Graceful fallback**: no key / expired key / network failure → the backend switches to a built-in biomechanical analysis. The report *always* arrives.
+- Reports are tagged with `aiProvider` so you always know who wrote them.
+
+### 📧 4. PDF Report Delivery
+- ReportLab-built PDF, emailed straight to the signed-in user's registered address.
+- Blocking PDF + SMTP work runs in a **thread pool** so the event loop never stalls.
+
+### 👤 5. Accounts & Onboarding
+- Signup / signin with **JWT** access tokens and **bcrypt**-hashed passwords.
+- Onboarding data: age category, experience level, BMI data.
+- Session history + aggregated stats per user.
+
+### 📊 6. Live Ops Dashboard *(optional)*
+- Light-mode ticket-style feed of every API call, categorized live: **Auth • Pose-Detect • AI Report • Session • System**.
+- Great for demos — watch requests land in real time.
+
+---
+
+## 🧠 How the Pipeline Works
+
+```mermaid
+flowchart TD
+    subgraph Browser["🌐 Browser — nothing leaves here except numbers"]
+        A[📷 Webcam Frame] --> B[Pose Estimation in Browser]
+        B --> C[33 Landmarks x,y]
+    end
+
+    subgraph Live["⚡ Live Detection — /ws/pose-detect"]
+        C -->|WebSocket| D[TFLite Pose Classifier]
+        D --> E[Joint Evaluation vs Reference Poses]
+        E --> F{All joints OK?}
+        F -- Yes --> G[⏱️ Timer Start / Continue]
+        F -- No --> H[⏸️ Timer Stop + Correction Message]
+        G & H --> I[Verdict streamed back to UI]
+    end
+
+    subgraph Report["📝 After Session"]
+        J[POST /api/generate-session-report] --> K{Groq key valid?}
+        K -- Yes --> L[🤖 Llama 3.3 70B Report]
+        K -- No / Error --> M[🧮 Biomechanical Fallback Report]
+        L & M --> N[Report JSON to Frontend]
+    end
+
+    subgraph Save["💾 Persist"]
+        N --> O[POST /api/sessions]
+        O --> P[(MongoDB — sessions per user)]
+        N --> Q[POST /api/send-session-report-email]
+        Q --> R[📄 PDF via ReportLab → SMTP]
+    end
+```
+
+> 💡 **Two separate pipelines:** the live ML loop (WebSocket, per-frame, no AI API) and the end-of-session report (REST, Groq once per session).
+
+---
+
+## 🛣️ API Routes
+
+| Method | Endpoint | Auth | Purpose |
+|:---:|---|:---:|---|
+| 🟢 `GET` | `/api/health` | — | Service health check |
+| 🟡 `POST` | `/api/auth/signup` | — | Create account |
+| 🟡 `POST` | `/api/auth/signin` | — | Login → JWT |
+| 🟢 `GET` | `/api/auth/me` | 🔒 | Current user profile |
+| 🟠 `PATCH` | `/api/auth/profile` | 🔒 | Update onboarding / BMI / experience |
+| 🟢 `GET` | `/api/poses` | — | List all yoga poses |
+| 🟢 `GET` | `/api/poses/{pose_id}` | — | Single pose detail |
+| 🟡 `POST` | `/api/sessions` | 🔒 | Save completed session + AI report |
+| 🟢 `GET` | `/api/sessions` | 🔒 | User's session history |
+| 🟢 `GET` | `/api/sessions/{session_id}` | 🔒 | One session in detail |
+| 🟡 `POST` | `/api/generate-session-report` | — | Generate AI / fallback report |
+| 🟡 `POST` | `/api/send-session-report-email` | 🔒 | Email the PDF report |
+| 🔌 `WS` | `/ws/pose-detect` | — | Real-time pose classification |
+| 🟢 `GET` | `/ops` | — | Live ops dashboard *(optional)* |
+| 🔌 `WS` | `/ws/live` | — | Dashboard event feed *(optional)* |
+
+> Interactive Swagger docs auto-generated at **`/docs`**.
+
+---
+
+## 🎨 Brand Palette
+
+Straight from the ASANA-SENSE logo:
+
+| Color | Hex | Usage |
+|---|---|---|
+| 🔵 **Deep Navy** | `#123B66` | Headings, brand wordmark |
+| 🌐 **Vision Blue** | `#2E7FE0` | Landmarks, links, auth events |
+| 🌿 **Balance Green** | `#1FAE7A` | Correct form, live status, success |
+| 🟡 **Amber** | `#C98A0A` | AI report events, highlights |
+| 🔴 **Alert Red** | `#E5484D` | Wrong joint, errors |
+| ⚪ **Mint Canvas** | `#F6FAF8` | Dashboard background |
+
 ---
 
 ## 🛠️ Project Structure
