@@ -12,6 +12,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 
 from database import users_collection
+from crypto_utils import decrypt_str, decrypt_bmi
 
 load_dotenv()
 
@@ -81,7 +82,7 @@ async def get_current_user(
 
     return {
         "id": str(user["_id"]),
-        "name": user["name"],
+        "name": decrypt_str(user["name"]),
         "email": user["email"],
         "is_account_active": user.get("is_account_active", True),
         "avatar_seed": user.get("avatar_seed", ""),
@@ -90,7 +91,7 @@ async def get_current_user(
         "age_category": user.get("age_category", ""),
         "experience_level": user.get("experience_level", ""),
         "stats": user.get("stats", {}),
-        "bmi_data": user.get("bmi_data"),
+        "bmi_data": decrypt_bmi(user.get("bmi_data")),
     }
 
 

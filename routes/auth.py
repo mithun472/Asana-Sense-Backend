@@ -15,6 +15,7 @@ from auth import (
     hash_password, verify_password, create_access_token,
     get_current_user,
 )
+from crypto_utils import encrypt_str, decrypt_str, encrypt_bmi, decrypt_bmi
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -23,7 +24,7 @@ def _user_to_response(user: dict) -> dict:
     """Convert MongoDB user document to API response dict."""
     return {
         "id": str(user["_id"]),
-        "name": user.get("name", ""),
+        "name": decrypt_str(user.get("name", "")),
         "email": user.get("email", ""),
         "is_account_active": user.get("is_account_active", True),
         "avatar_seed": user.get("avatar_seed", ""),
@@ -32,7 +33,7 @@ def _user_to_response(user: dict) -> dict:
         "age_category": user.get("age_category", ""),
         "experience_level": user.get("experience_level", ""),
         "stats": user.get("stats", {}),
-        "bmi_data": user.get("bmi_data"),
+        "bmi_data": decrypt_bmi(user.get("bmi_data")),
     }
 
 
@@ -50,12 +51,13 @@ async def signup(req: SignUpRequest):
         )
 
     now = datetime.utcnow()
+    name_plain = req.name.strip()
     user_doc = {
-        "name": req.name.strip(),
+        "name": encrypt_str(name_plain),
         "email": req.email.lower().strip(),
         "password_hash": hash_password(req.password),
         "is_account_active": True,
-        "avatar_seed": req.name.strip()[:2].upper(),
+        "avatar_seed": name_plain[:2].upper(),
         "member_since": now.strftime("%b %Y"),
         "has_completed_onboarding": False,
         "age_category": "",
@@ -81,7 +83,7 @@ async def signup(req: SignUpRequest):
         token=token,
         user={
             "id": user_id,
-            "name": user_doc["name"],
+            "name": name_plain,
             "email": user_doc["email"],
             "is_account_active": True,
             "avatar_seed": user_doc["avatar_seed"],
@@ -145,7 +147,7 @@ async def update_profile(
     if req.experience_level is not None:
         update_fields["experience_level"] = req.experience_level
     if req.bmi_data is not None:
-        update_fields["bmi_data"] = req.bmi_data.model_dump()
+        update_fields["bmi_data"] = encrypt_bmi(req.bmi_data.model_dump())
 
     if update_fields:
         update_fields["updated_at"] = datetime.utcnow()

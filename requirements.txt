@@ -14,3 +14,4 @@ python-multipart>=0.0.9
 pandas>=2.2.0
 tensorflow>=2.16.0
 reportlab>=4.0.0
+cryptography>=42.0.0
