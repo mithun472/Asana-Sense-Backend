@@ -79,7 +79,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+import time
+from live_feed import live_feed, categorize
 
+@app.middleware("http")
+async def record_activity(request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    category, label = categorize(request.url.path)
+    await live_feed.record({
+        "method": request.method,
+        "path": request.url.path,
+        "status": response.status_code,
+        "duration_ms": round((time.time() - start) * 1000),
+        "time": __import__("datetime").datetime.utcnow().isoformat(),
+        "category": category,
+        "category_label": label,
+        "client": request.client.host if request.client else "",
+    })
+    return response
 
 # ── Health ────────────────────────────────────────────────────────────────────
 

@@ -8,7 +8,7 @@ from .poses import router as poses_router
 from .sessions import router as sessions_router
 from .reports import router as reports_router
 from .websocket import router as websocket_router
-
+from .live_ops import router as live_ops_router
 
 def register_routes(app: FastAPI) -> None:
     """Attach all modular routers to the FastAPI application."""
@@ -17,3 +17,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(sessions_router)
     app.include_router(reports_router)
     app.include_router(websocket_router)
+    app.include_router(live_ops_router)

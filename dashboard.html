@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Asana-Sense Ops</title>
+<link rel="icon" href="asana_sense_logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F6FAF8;
+    --panel:#FFFFFF;
+    --panel-raised:#EEF6F1;
+    --line:#DCE8E3;
+    --text:#0F2A24;
+    --text-dim:#6B8079;
+    --teal:#1FAE7A;
+    --blue:#2E7FE0;
+    --navy:#123B66;
+    --red:#E5484D;
+    --amber:#C98A0A;
+    --other:#8A9490;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(31,174,122,0.07), transparent 60%),
+      radial-gradient(ellipse 700px 400px at 100% 0%, rgba(46,127,224,0.06), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .board{
+    max-width:920px;
+    margin:0 auto;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    border-left:1px solid var(--line);
+    border-right:1px solid var(--line);
+    background:var(--bg);
+  }
+
+  /* ── Header ─────────────────────────────────────────── */
+  .signboard{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:16px 28px;
+    background: var(--panel);
+    border-bottom:1px solid var(--line);
+    box-shadow:0 1px 0 rgba(15,42,36,0.03);
+    position:sticky;
+    top:0;
+    z-index:10;
+  }
+  .signboard__brand{ display:flex; align-items:center; gap:12px; }
+  .signboard__logo{ height:52px; width:auto; display:block; margin:-6px 0; }
+  .signboard__title{
+    font-family:'Oswald', sans-serif;
+    font-weight:600;
+    font-size:20px;
+    letter-spacing:0.06em;
+    line-height:1.15;
+  }
+  .signboard__sub{
+    display:block;
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:400;
+    font-size:10.5px;
+    letter-spacing:0.14em;
+    color:var(--text-dim);
+    text-transform:uppercase;
+    margin-top:2px;
+  }
+
+  .signboard__status{ display:flex; align-items:center; gap:14px; }
+  .status-pill{
+    display:flex; align-items:center; gap:8px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    letter-spacing:0.06em;
+    padding:6px 12px;
+    border-radius:20px;
+    border:1px solid var(--line);
+    background:rgba(31,174,122,0.05);
+  }
+  .status-pill.is-live{ color:var(--teal); border-color:rgba(31,174,122,0.3); }
+  .status-pill.is-down{ color:var(--red); border-color:rgba(229,72,77,0.3); }
+  .pulse-dot{
+    width:8px; height:8px; border-radius:50%;
+    background:currentColor;
+    animation:pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(62,213,152,0.5); }
+    70%{ box-shadow:0 0 0 8px rgba(62,213,152,0); }
+    100%{ box-shadow:0 0 0 0 rgba(62,213,152,0); }
+  }
+  .viewers{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--text-dim);
+  }
+
+  /* ── Category filter strip ────────────────────────────── */
+  .mile-strip{
+    display:flex;
+    gap:8px;
+    padding:14px 28px;
+    overflow-x:auto;
+    background:var(--panel);
+    border-bottom:1px solid var(--line);
+    position:sticky;
+    top:71px;
+    z-index:9;
+  }
+  .mile{
+    flex:0 0 auto;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.06em;
+    color:var(--text-dim);
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:8px 12px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    transition:border-color .15s, color .15s, background .15s;
+  }
+  .mile b{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:500;
+    color:var(--text);
+    background:rgba(15,42,36,0.06);
+    padding:1px 6px;
+    border-radius:10px;
+    font-size:11px;
+  }
+  .mile:hover{ border-color:#2c4e48; }
+  .mile:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+  .mile.active{ color:var(--text); border-color:var(--accent, var(--teal)); }
+  .mile.active b{ background:var(--accent, var(--teal)); color:#0A1412; }
+  .mile--auth{ --accent:var(--blue); }
+  .mile--pose{ --accent:var(--teal); }
+  .mile--report{ --accent:var(--amber); }
+  .mile--session{ --accent:var(--navy); }
+  .mile--other{ --accent:var(--other); }
+
+  /* ── Feed ───────────────────────────────────────────── */
+  .feed{
+    flex:1;
+    padding:20px 28px 60px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+
+  .empty{
+    margin-top:60px;
+    text-align:center;
+    color:var(--text-dim);
+    font-size:14px;
+    line-height:1.6;
+    max-width:360px;
+    margin-left:auto;
+    margin-right:auto;
+  }
+
+  .ticket{
+    position:relative;
+    display:flex;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:2px 8px 8px 2px;
+    padding:12px 16px 12px 18px;
+    background-image:repeating-linear-gradient(
+      to right, var(--line) 0 6px, transparent 6px 12px
+    );
+    background-size:100% 1px;
+    background-position:top;
+    background-repeat:no-repeat;
+    overflow:hidden;
+  }
+  .ticket__bar{
+    position:absolute;
+    left:0; top:0; bottom:0;
+    width:4px;
+    background:var(--other);
+  }
+  .ticket--auth .ticket__bar{ background:var(--blue); }
+  .ticket--pose .ticket__bar{ background:var(--teal); }
+  .ticket--report .ticket__bar{ background:var(--amber); }
+  .ticket--session .ticket__bar{ background:var(--navy); }
+
+  .ticket.is-new{ animation:drop-in .4s ease-out; }
+  @keyframes drop-in{
+    from{ transform:translateY(-8px); opacity:0; background-color:rgba(62,213,152,0.10); }
+    to{ transform:translateY(0); opacity:1; background-color:transparent; }
+  }
+
+  .ticket__body{ flex:1; min-width:0; }
+  .ticket__row1{
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+  }
+  .ticket__method{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px; font-weight:500;
+    color:var(--amber);
+    letter-spacing:0.04em;
+  }
+  .ticket__path{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    color:var(--text);
+    word-break:break-all;
+  }
+  .ticket__status{
+    margin-left:auto;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    padding:1px 7px;
+    border-radius:10px;
+    background:rgba(15,42,36,0.06);
+    color:var(--text-dim);
+  }
+  .ticket__status--ok{ color:var(--teal); }
+  .ticket__status--warn{ color:var(--amber); }
+  .ticket__status--err{ color:var(--red); }
+
+  .ticket__row2{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    margin-top:6px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--text-dim);
+  }
+  .ticket__stamp{
+    font-family:'Oswald', sans-serif;
+    font-size:10px;
+    letter-spacing:0.1em;
+    padding:2px 7px;
+    border:1px solid currentColor;
+    border-radius:3px;
+    transform:rotate(-2deg);
+    display:inline-block;
+  }
+  .ticket--auth .ticket__stamp{ color:var(--blue); }
+  .ticket--pose .ticket__stamp{ color:var(--teal); }
+  .ticket--report .ticket__stamp{ color:var(--amber); }
+  .ticket--session .ticket__stamp{ color:var(--navy); background:rgba(87,166,255,0.08); }
+  .ticket--other .ticket__stamp{ color:var(--other); }
+
+  .ticket__stage{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:600;
+    color:var(--amber);
+    text-transform:uppercase;
+  }
+
+  @media (max-width:560px){
+    .signboard{ padding:14px 16px; }
+    .signboard__title{ font-size:16px; }
+    .signboard__logo{ height:40px; }
+    .viewers{ display:none; }
+    .mile-strip{ padding:12px 16px; top:63px; }
+    .feed{ padding:16px 14px 50px; }
+    .ticket__status{ margin-left:0; order:3; width:100%; }
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .pulse-dot, .ticket.is-new{ animation:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="board">
+  <header class="signboard">
+    <div class="signboard__brand">
+      <img class="signboard__logo" src="asana_sense_logo.png" alt="Asana-Sense">
+      <div class="signboard__title">
+        ASANA-SENSE
+        <span class="signboard__sub">Live Ops · See · Guide · Improve</span>
+      </div>
+    </div>
+    <div class="signboard__status">
+      <div class="status-pill is-live" id="statusPill">
+        <span class="pulse-dot" id="statusDot"></span>
+        <span id="statusText">CONNECTING</span>
+      </div>
+      <span class="viewers" id="viewers"></span>
+    </div>
+  </header>
+
+  <nav class="mile-strip" id="filterStrip">
+    <button class="mile active" data-filter="all">ALL <b id="count-all">0</b></button>
+    <button class="mile mile--auth" data-filter="auth">AUTH <b id="count-auth">0</b></button>
+    <button class="mile mile--pose" data-filter="pose">POSE-DETECT <b id="count-pose">0</b></button>
+    <button class="mile mile--report" data-filter="report">AI REPORT <b id="count-report">0</b></button>
+    <button class="mile mile--session" data-filter="session">SESSION <b id="count-session">0</b></button>
+    <button class="mile mile--other" data-filter="other">SYSTEM <b id="count-other">0</b></button>
+  </nav>
+
+  <main class="feed" id="feed">
+    <div class="empty" id="emptyState">Feed's quiet. Open the app or hit an endpoint — it lands here in real time.</div>
+  </main>
+</div>
+
+<script>
+  const feedEl = document.getElementById('feed');
+  const emptyState = document.getElementById('emptyState');
+  const statusPill = document.getElementById('statusPill');
+  const statusText = document.getElementById('statusText');
+  const viewersEl = document.getElementById('viewers');
+  const filterStrip = document.getElementById('filterStrip');
+  const countEls = {
+    all: document.getElementById('count-all'),
+    auth: document.getElementById('count-auth'),
+    pose: document.getElementById('count-pose'),
+    report: document.getElementById('count-report'),
+    session: document.getElementById('count-session'),
+    other: document.getElementById('count-other'),
+  };
+
+  const MAX_DOM_TICKETS = 150;
+  let currentFilter = 'all';
+  let ticketCount = 0;
+
+  filterStrip.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mile');
+    if (!btn) return;
+    filterStrip.querySelectorAll('.mile').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    applyFilter();
+  });
+
+  function applyFilter(){
+    feedEl.querySelectorAll('.ticket').forEach(t => {
+      const show = currentFilter === 'all' || t.dataset.category === currentFilter;
+      t.style.display = show ? '' : 'none';
+    });
+  }
+
+  function statusClass(status){
+    if (status >= 500) return 'ticket__status--err';
+    if (status >= 400) return 'ticket__status--warn';
+    return 'ticket__status--ok';
+  }
+
+  function formatTime(iso){
+    const d = new Date(iso);
+    const pad = (n, l=2) => String(n).padStart(l, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(),3)}`;
+  }
+
+  function renderTicket(event, { animate }){
+    emptyState.style.display = 'none';
+    const cat = event.category || 'other';
+    const el = document.createElement('article');
+    el.className = `ticket ticket--${cat}` + (animate ? ' is-new' : '');
+    el.dataset.category = cat;
+    const stageBits = [];
+    if (event.pose_name)                stageBits.push(`<span>🧘 ${event.pose_name}</span>`);
+    if (event.confidence !== undefined && event.confidence !== null) stageBits.push(`<span>conf ${(event.confidence*100).toFixed(0)}%</span>`);
+    if (event.accuracy !== undefined && event.accuracy !== null)     stageBits.push(`<span>acc ${event.accuracy}%</span>`);
+    if (event.ai_provider)              stageBits.push(`<span>🤖 ${event.ai_provider}</span>`);
+    if (event.user_email)               stageBits.push(`<span>👤 ${event.user_email}</span>`);
+    const stageRow = stageBits.length
+      ? `<div class="ticket__row2">${stageBits.join('')}</div>`
+      : '';
+
+    el.innerHTML = `
+      <div class="ticket__bar"></div>
+      <div class="ticket__body">
+        <div class="ticket__row1">
+          <span class="ticket__method">${event.method}</span>
+          <span class="ticket__path">${event.path}</span>
+          <span class="ticket__status ${statusClass(event.status)}">${event.status}</span>
+        </div>
+        <div class="ticket__row2">
+          <span class="ticket__time">${formatTime(event.time)}</span>
+          <span class="ticket__stamp">${event.category_label || 'SYSTEM'}</span>
+          <span class="ticket__duration">${event.duration_ms}ms</span>
+          <span class="ticket__client">${event.client || ''}</span>
+        </div>
+        ${stageRow}
+      </div>
+    `;
+    if (currentFilter !== 'all' && cat !== currentFilter) el.style.display = 'none';
+    feedEl.insertBefore(el, feedEl.firstChild);
+    ticketCount++;
+    if (ticketCount > MAX_DOM_TICKETS){
+      const last = feedEl.lastElementChild;
+      if (last) feedEl.removeChild(last);
+      ticketCount--;
+    }
+  }
+
+  function updateCounts(stats){
+    countEls.all.textContent = stats.total ?? 0;
+    countEls.auth.textContent = stats.auth ?? 0;
+    countEls.pose.textContent = stats.pose ?? 0;
+    countEls.report.textContent = stats.report ?? 0;
+    countEls.session.textContent = stats.session ?? 0;
+    countEls.other.textContent = stats.other ?? 0;
+  }
+
+  function setLive(){
+    statusPill.classList.remove('is-down');
+    statusPill.classList.add('is-live');
+    statusText.textContent = 'LIVE';
+  }
+  function setDown(){
+    statusPill.classList.remove('is-live');
+    statusPill.classList.add('is-down');
+    statusText.textContent = 'OFFLINE — RECONNECTING';
+    viewersEl.textContent = '';
+  }
+
+  let socket;
+  function connect(){
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    socket = new WebSocket(`${proto}://${location.host}/ws/live`);
+
+    socket.onopen = () => setLive();
+
+    socket.onmessage = (msg) => {
+      const payload = JSON.parse(msg.data);
+      if (payload.type === 'init'){
+        feedEl.querySelectorAll('.ticket').forEach(t => t.remove());
+        ticketCount = 0;
+        payload.events.slice().reverse().forEach(ev => renderTicket(ev, { animate:false }));
+        updateCounts(payload.stats);
+        setViewers(payload.viewers);
+      } else if (payload.type === 'event'){
+        renderTicket(payload.event, { animate:true });
+        updateCounts(payload.stats);
+      } else if (payload.type === 'viewers'){
+        setViewers(payload.viewers);
+      }
+    };
+
+    socket.onclose = () => {
+      setDown();
+      setTimeout(connect, 2000);
+    };
+    socket.onerror = () => socket.close();
+  }
+
+  function setViewers(n){
+    viewersEl.textContent = n === 1 ? '1 online' : `${n} online`;
+  }
+
+  connect();
+</script>
+</body>
+</html>
