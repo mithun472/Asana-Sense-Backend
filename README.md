@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="asana_sense_logo.png" alt="ASANA-SENSE" width="260" />
+<img src="https://res.cloudinary.com/yhj7u0bn/image/upload/v1790602123/asana_sense_logo.png" alt="ASANA-SENSE" width="260" />
 
 # 🧘 ASANA-SENSE Backend
 
