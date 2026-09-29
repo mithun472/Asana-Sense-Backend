@@ -5,16 +5,72 @@ Automatically sends certified session reports in PDF format via SMTP.
 import io
 import os
 import smtplib
+from html import escape
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
 
-# ReportLab for pure Python PDF generation
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+def send_welcome_email(to_email: str, user_name: str) -> tuple[bool, str]:
+    """Send a welcome email to a newly registered ASANA-SENSE user."""
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    smtp_from = os.getenv("SMTP_FROM_EMAIL", smtp_user).strip() or smtp_user
+    smtp_from_name = os.getenv("SMTP_FROM_NAME", "ASANA - SENSE AI")
+
+    if not smtp_user or not smtp_password:
+        return False, "SMTP credentials (SMTP_USER / SMTP_PASSWORD) are not configured in backend/.env"
+
+    if not to_email or "@" not in to_email:
+        return False, f"Invalid destination email: {to_email}"
+
+    safe_name = escape(user_name or "Yogi")
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Welcome to ASANA-SENSE AI"
+    msg["From"] = f"{smtp_from_name} <{smtp_from}>"
+    msg["To"] = to_email
+
+    plain_content = (
+        f"Namaste {user_name or 'Yogi'},\n\n"
+        "Welcome to ASANA-SENSE AI! We are glad to have you with us. "
+        "Your personalized yoga practice and biomechanics coaching journey starts now.\n\n"
+        "Keep showing up, breathe steadily, and enjoy your practice.\n\n"
+        "With warmth,\nASANA-SENSE AI"
+    )
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: Segoe UI, Arial, sans-serif; background: #fafaf9; color: #1c1917; padding: 24px;">
+      <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e7e5e4; border-radius: 16px; padding: 32px;">
+        <h1 style="color: #047857; margin-top: 0;">Namaste, {safe_name}!</h1>
+        <p>Welcome to <strong>ASANA-SENSE AI</strong>. We are glad to have you with us.</p>
+        <p>Your personalized yoga practice and biomechanics coaching journey starts now. Keep showing up, breathe steadily, and enjoy your practice.</p>
+        <p style="margin-bottom: 0;">With warmth,<br><strong>ASANA-SENSE AI</strong></p>
+      </div>
+    </body>
+    </html>
+    """
+    msg.attach(MIMEText(plain_content, "plain"))
+    msg.attach(MIMEText(html_content, "html"))
+
+    try:
+        print(f"[EmailService] Connecting to SMTP server {smtp_host}:{smtp_port}...")
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=12)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=12)
+            server.starttls()
+
+        server.login(smtp_user, smtp_password)
+        server.send_message(msg)
+        server.quit()
+        print(f"[EmailService] Welcome email successfully sent to {to_email}")
+        return True, "Email sent successfully"
+    except Exception as e:
+        print(f"[EmailService] Failed to send welcome email to {to_email}: {e}")
+        return False, str(e)
 
 
 def generate_session_pdf(
@@ -24,6 +80,11 @@ def generate_session_pdf(
     ai_report: dict | None = None,
 ) -> bytes:
     """Generate a certified ASANA-SENSE Biomechanics Master Report as PDF bytes."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,

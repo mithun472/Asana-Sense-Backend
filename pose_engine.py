@@ -3,6 +3,7 @@ TFLite pose classifier + landmark normalization + per-joint evaluation.
 Mirrors the exact normalization logic from yoga_pose_detector.py.
 """
 import os
+import threading
 import numpy as np
 from typing import Optional
 from dotenv import load_dotenv
@@ -75,6 +76,8 @@ class PoseEngine:
         else:
             self._model_path = env_path or "../yoga_pose_classifier.tflite"
         self._interpreter = None
+        # TFLite interpreters are NOT thread-safe: serialize set_tensor/invoke/get_tensor.
+        self._lock = threading.Lock()
         self._input_details = None
         self._output_details = None
         self._reference_poses: dict = {}  # {class_name: {mean: np.array, std: np.array}}
@@ -154,9 +157,11 @@ class PoseEngine:
         embedding = self.normalize_landmarks(lm_xy)
         inp = np.expand_dims(embedding, axis=0).astype(np.float32)
 
-        self._interpreter.set_tensor(self._input_details["index"], inp)
-        self._interpreter.invoke()
-        probs = self._interpreter.get_tensor(self._output_details["index"])[0]
+        with self._lock:
+            self._interpreter.set_tensor(self._input_details["index"], inp)
+            self._interpreter.invoke()
+            # copy: the interpreter reuses its output buffer on the next call
+            probs = self._interpreter.get_tensor(self._output_details["index"])[0].copy()
 
         top_idx = int(np.argmax(probs))
         top_conf = float(probs[top_idx])

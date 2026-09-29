@@ -2,6 +2,7 @@
 WebSocket route for real-time pose detection and biomechanics evaluation.
 """
 import json
+import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from pose_engine import pose_engine, CONF_THRESHOLD
@@ -63,7 +64,7 @@ async def websocket_pose_detect(websocket: WebSocket):
 
             try:
                 # 1. Classify the pose
-                predicted, confidence, probs = pose_engine.classify(landmarks)
+                predicted, confidence, probs = await asyncio.to_thread(pose_engine.classify, landmarks)
 
                 # 2. If predicted is no_pose or confidence too low → idle
                 if predicted == "no_pose" or confidence < CONF_THRESHOLD:
@@ -102,8 +103,8 @@ async def websocket_pose_detect(websocket: WebSocket):
                     pose_matches = mismatch_counter < 3
 
                 # 4. Evaluate per-joint correctness
-                is_correct, has_yellow, has_red, joints, correction = pose_engine.evaluate_joints(
-                    landmarks, target_pose
+                is_correct, has_yellow, has_red, joints, correction = await asyncio.to_thread(
+                    pose_engine.evaluate_joints, landmarks, target_pose
                 )
 
                 # Override: if confirmed wrong pose after debouncing, flag as red

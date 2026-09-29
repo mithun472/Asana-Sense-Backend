@@ -82,14 +82,19 @@ async def generate_session_report(payload: dict):
                 },
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=12) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
-                raw_content = res_data["choices"][0]["message"]["content"]
-                # Strip markdown code blocks if present
-                clean_json = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_content.strip(), flags=re.MULTILINE)
-                parsed = json.loads(clean_json)
-                parsed["aiProvider"] = "Groq (Llama 3.3 70B)"
-                return {"success": True, "data": parsed}
+            def _call_groq() -> dict:
+                with urllib.request.urlopen(req, timeout=12) as response:
+                    return json.loads(response.read().decode("utf-8"))
+
+            # Blocking network call -> worker thread, so the event loop
+            # (and every other user's websocket) keeps running meanwhile.
+            res_data = await asyncio.to_thread(_call_groq)
+            raw_content = res_data["choices"][0]["message"]["content"]
+            # Strip markdown code blocks if present
+            clean_json = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_content.strip(), flags=re.MULTILINE)
+            parsed = json.loads(clean_json)
+            parsed["aiProvider"] = "Groq (Llama 3.3 70B)"
+            return {"success": True, "data": parsed}
         except Exception as e:
             print(f"[Backend Groq AI Error]: {e}")
 
