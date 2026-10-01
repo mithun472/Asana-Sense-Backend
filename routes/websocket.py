@@ -3,9 +3,11 @@ WebSocket route for real-time pose detection and biomechanics evaluation.
 """
 import json
 import asyncio
+from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from pose_engine import pose_engine, CONF_THRESHOLD
+from live_feed import live_feed
 
 router = APIRouter(tags=["WebSocket Pose Detection"])
 
@@ -26,6 +28,16 @@ async def websocket_pose_detect(websocket: WebSocket):
     """
     await websocket.accept()
     print("[WS] Client connected for pose detection")
+    await live_feed.record({
+        "method": "WebSocket",
+        "path": "/ws/pose-detect",
+        "status": 101,
+        "duration_ms": 0,
+        "time": datetime.utcnow().isoformat(),
+        "category": "pose",
+        "category_label": "POSE-DETECT",
+        "client": websocket.client.host if websocket.client else "",
+    })
 
     # Per-connection state for timer action tracking and prediction debouncing
     was_running = False
@@ -65,6 +77,7 @@ async def websocket_pose_detect(websocket: WebSocket):
             try:
                 # 1. Classify the pose
                 predicted, confidence, probs = await asyncio.to_thread(pose_engine.classify, landmarks)
+                response_predicted = {"traingle": "triangle"}.get(predicted, predicted)
 
                 # 2. If predicted is no_pose or confidence too low → idle
                 if predicted == "no_pose" or confidence < CONF_THRESHOLD:
@@ -73,7 +86,7 @@ async def websocket_pose_detect(websocket: WebSocket):
                     mismatch_counter = 0
                     await websocket.send_json({
                         "type": "pose_result",
-                        "predicted_pose": predicted,
+                        "predicted_pose": response_predicted,
                         "confidence": round(confidence, 4),
                         "target_pose": target_pose,
                         "is_correct": False,
@@ -111,7 +124,7 @@ async def websocket_pose_detect(websocket: WebSocket):
                 if not pose_matches:
                     is_correct = False
                     has_red = True
-                    correction = f"You're doing {predicted.replace('_', ' ').title()}. Switch to {target_pose.replace('_', ' ').title()}."
+                    correction = f"You're doing {response_predicted.replace('_', ' ').title()}. Switch to {target_pose.replace('_', ' ').title()}."
 
                 # 5. Determine timer action:
                 # Yellow does NOT stop the timer! Timer runs until RED is detected!
@@ -125,7 +138,7 @@ async def websocket_pose_detect(websocket: WebSocket):
                 # 6. Send result
                 await websocket.send_json({
                     "type": "pose_result",
-                    "predicted_pose": predicted,
+                    "predicted_pose": response_predicted,
                     "confidence": round(confidence, 4),
                     "target_pose": target_pose,
                     "is_correct": is_correct,

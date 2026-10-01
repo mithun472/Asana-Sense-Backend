@@ -5,35 +5,75 @@ Automatically sends certified session reports in PDF format via SMTP.
 import io
 import os
 import smtplib
-from html import escape
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
+from html import escape
+
+# ReportLab for pure Python PDF generation
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+
+EMAIL_LOGO_URL = "https://res.cloudinary.com/yhj7u0bn/image/upload/v1790602123/asana_sense_logo.png"
+
+
+def _email_logo_html() -> str:
+    return (
+        f'<img src="{EMAIL_LOGO_URL}" alt="ASANA-SENSE AI" '
+        'style="display:block; width:150px; height:auto; margin:0 auto 18px;">'
+    )
+
+
+def _smtp_settings():
+    """Shared SMTP env lookup used by every sender below."""
+    return {
+        "host": os.getenv("SMTP_HOST", "smtp.gmail.com"),
+        "port": int(os.getenv("SMTP_PORT", 587)),
+        "user": os.getenv("SMTP_USER", "").strip(),
+        "password": os.getenv("SMTP_PASSWORD", "").strip(),
+        "from_email": os.getenv("SMTP_FROM_EMAIL", os.getenv("SMTP_USER", "")).strip() or os.getenv("SMTP_USER", "").strip(),
+        "from_name": os.getenv("SMTP_FROM_NAME", "ASANA - SENSE AI"),
+    }
+
+
+def _send_mime(msg) -> tuple[bool, str]:
+    """Shared SMTP connect/login/send used by every sender below."""
+    s = _smtp_settings()
+    if not s["user"] or not s["password"]:
+        return False, "SMTP credentials (SMTP_USER / SMTP_PASSWORD) are not configured in backend/.env"
+    try:
+        print(f"[EmailService] Connecting to SMTP server {s['host']}:{s['port']}...")
+        if s["port"] == 465:
+            server = smtplib.SMTP_SSL(s["host"], s["port"], timeout=12)
+        else:
+            server = smtplib.SMTP(s["host"], s["port"], timeout=12)
+            server.starttls()
+        server.login(s["user"], s["password"])
+        server.send_message(msg)
+        server.quit()
+        return True, "Email sent successfully"
+    except Exception as e:
+        print(f"[EmailService] Failed to send email: {e}")
+        return False, str(e)
+
 
 def send_welcome_email(to_email: str, user_name: str) -> tuple[bool, str]:
     """Send a welcome email to a newly registered ASANA-SENSE user."""
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_USER", "").strip()
-    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
-    smtp_from = os.getenv("SMTP_FROM_EMAIL", smtp_user).strip() or smtp_user
-    smtp_from_name = os.getenv("SMTP_FROM_NAME", "ASANA - SENSE AI")
-
-    if not smtp_user or not smtp_password:
-        return False, "SMTP credentials (SMTP_USER / SMTP_PASSWORD) are not configured in backend/.env"
-
+    s = _smtp_settings()
     if not to_email or "@" not in to_email:
         return False, f"Invalid destination email: {to_email}"
 
     safe_name = escape(user_name or "Yogi")
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Welcome to ASANA-SENSE AI"
-    msg["From"] = f"{smtp_from_name} <{smtp_from}>"
+    msg["From"] = f"{s['from_name']} <{s['from_email']}>"
     msg["To"] = to_email
 
     plain_content = (
-        f"Namaste {user_name or 'Yogi'},\n\n"
+        f"Vanakkam, {user_name or 'Yogi'},\n\n"
         "Welcome to ASANA-SENSE AI! We are glad to have you with us. "
         "Your personalized yoga practice and biomechanics coaching journey starts now.\n\n"
         "Keep showing up, breathe steadily, and enjoy your practice.\n\n"
@@ -44,7 +84,8 @@ def send_welcome_email(to_email: str, user_name: str) -> tuple[bool, str]:
     <html>
     <body style="font-family: Segoe UI, Arial, sans-serif; background: #fafaf9; color: #1c1917; padding: 24px;">
       <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e7e5e4; border-radius: 16px; padding: 32px;">
-        <h1 style="color: #047857; margin-top: 0;">Namaste, {safe_name}!</h1>
+                {_email_logo_html()}
+        <h1 style="color: #047857; margin-top: 0;">Vanakkam, {safe_name}!</h1>
         <p>Welcome to <strong>ASANA-SENSE AI</strong>. We are glad to have you with us.</p>
         <p>Your personalized yoga practice and biomechanics coaching journey starts now. Keep showing up, breathe steadily, and enjoy your practice.</p>
         <p style="margin-bottom: 0;">With warmth,<br><strong>ASANA-SENSE AI</strong></p>
@@ -55,22 +96,97 @@ def send_welcome_email(to_email: str, user_name: str) -> tuple[bool, str]:
     msg.attach(MIMEText(plain_content, "plain"))
     msg.attach(MIMEText(html_content, "html"))
 
-    try:
-        print(f"[EmailService] Connecting to SMTP server {smtp_host}:{smtp_port}...")
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=12)
-        else:
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=12)
-            server.starttls()
-
-        server.login(smtp_user, smtp_password)
-        server.send_message(msg)
-        server.quit()
+    success, message = _send_mime(msg)
+    if success:
         print(f"[EmailService] Welcome email successfully sent to {to_email}")
-        return True, "Email sent successfully"
-    except Exception as e:
-        print(f"[EmailService] Failed to send welcome email to {to_email}: {e}")
-        return False, str(e)
+    return success, message
+
+
+def send_otp_email(to_email: str, user_name: str, otp: str) -> tuple[bool, str]:
+    """Send a 6-digit email-verification OTP to a user mid-signup."""
+    s = _smtp_settings()
+    if not to_email or "@" not in to_email:
+        return False, f"Invalid destination email: {to_email}"
+
+    safe_name = escape(user_name or "Yogi")
+    safe_otp = escape(otp)
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"{safe_otp} is your ASANA-SENSE verification code"
+    msg["From"] = f"{s['from_name']} <{s['from_email']}>"
+    msg["To"] = to_email
+
+    plain_content = (
+        f"Vanakkam {user_name or 'Yogi'},\n\n"
+        f"Your ASANA-SENSE verification code is: {otp}\n\n"
+        "This code expires in 10 minutes. If you didn't request this, you can ignore this email.\n\n"
+        "With warmth,\nASANA-SENSE AI"
+    )
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: Segoe UI, Arial, sans-serif; background: #fafaf9; color: #1c1917; padding: 24px;">
+      <div style="max-width: 480px; margin: 0 auto; background: #ffffff; border: 1px solid #e7e5e4; border-radius: 16px; padding: 32px; text-align: center;">
+                {_email_logo_html()}
+        <h1 style="color: #047857; margin-top: 0; font-size: 18px;">Vanakkam, {safe_name}</h1>
+        <p style="color: #57534e; font-size: 13px;">Enter this code to verify your email and finish creating your account.</p>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 34px; font-weight: 700; letter-spacing: 8px; color: #047857; background: #ecfdf5; border-radius: 12px; padding: 16px 8px; margin: 20px 0;">
+          {safe_otp}
+        </div>
+        <p style="color: #a8a29e; font-size: 11px;">This code expires in 10 minutes. Didn't request it? You can safely ignore this email.</p>
+      </div>
+    </body>
+    </html>
+    """
+    msg.attach(MIMEText(plain_content, "plain"))
+    msg.attach(MIMEText(html_content, "html"))
+
+    success, message = _send_mime(msg)
+    if success:
+        print(f"[EmailService] OTP email successfully sent to {to_email}")
+    return success, message
+
+
+def send_password_reset_email(to_email: str, user_name: str, reset_url: str) -> tuple[bool, str]:
+    """Send a password-reset link to a user."""
+    s = _smtp_settings()
+    if not to_email or "@" not in to_email:
+        return False, f"Invalid destination email: {to_email}"
+
+    safe_name = escape(user_name or "Yogi")
+    safe_url = escape(reset_url, quote=True)
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Reset your ASANA-SENSE password"
+    msg["From"] = f"{s['from_name']} <{s['from_email']}>"
+    msg["To"] = to_email
+
+    plain_content = (
+        f"Vanakkam {user_name or 'Yogi'},\n\n"
+        "We received a request to reset your ASANA-SENSE password.\n\n"
+        f"Reset it here (expires in 15 minutes): {reset_url}\n\n"
+        "If you didn't request this, you can safely ignore this email — your password will stay unchanged.\n\n"
+        "With warmth,\nASANA-SENSE AI"
+    )
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: Segoe UI, Arial, sans-serif; background: #fafaf9; color: #1c1917; padding: 24px;">
+      <div style="max-width: 480px; margin: 0 auto; background: #ffffff; border: 1px solid #e7e5e4; border-radius: 16px; padding: 32px; text-align: center;">
+                {_email_logo_html()}
+        <h1 style="color: #047857; margin-top: 0; font-size: 18px;">Vanakkam, {safe_name}</h1>
+        <p style="color: #57534e; font-size: 13px;">We received a request to reset your ASANA-SENSE password.</p>
+        <a href="{safe_url}" style="display:inline-block; background:#047857; color:#ffffff; text-decoration:none; font-weight:600; font-size:14px; padding:12px 28px; border-radius:9999px; margin:18px 0;">Reset Password</a>
+        <p style="color: #a8a29e; font-size: 11px;">This link expires in 15 minutes. Didn't request it? You can safely ignore this email — your password stays unchanged.</p>
+      </div>
+    </body>
+    </html>
+    """
+    msg.attach(MIMEText(plain_content, "plain"))
+    msg.attach(MIMEText(html_content, "html"))
+
+    success, message = _send_mime(msg)
+    if success:
+        print(f"[EmailService] Password reset email successfully sent to {to_email}")
+    return success, message
 
 
 def generate_session_pdf(
@@ -80,11 +196,6 @@ def generate_session_pdf(
     ai_report: dict | None = None,
 ) -> bytes:
     """Generate a certified ASANA-SENSE Biomechanics Master Report as PDF bytes."""
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib import colors
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -345,8 +456,9 @@ def send_session_report_email(
     <body>
       <div class="card">
         <div class="header">
+                    {_email_logo_html()}
           <span class="badge">ASANA - SENSE AI Practice Certified</span>
-          <h1>Namaste, {user_name}!</h1>
+          <h1>Vanakkam, {user_name}!</h1>
           <p style="color: #78716c; font-size: 13px; margin: 0;">Your live biomechanics session report has been generated and certified.</p>
         </div>
 
@@ -381,7 +493,7 @@ def send_session_report_email(
     """
 
     alt_part = MIMEMultipart("alternative")
-    alt_part.attach(MIMEText(f"Namaste {user_name},\n\nYour ASANA-SENSE practice session ({accuracy}% accuracy, {mins} mins) has been certified. Your official PDF report is attached to this email.", "plain"))
+    alt_part.attach(MIMEText(f"Vanakkam {user_name},\n\nYour ASANA-SENSE practice session ({accuracy}% accuracy, {mins} mins) has been certified. Your official PDF report is attached to this email.", "plain"))
     alt_part.attach(MIMEText(html_content, "html"))
     msg.attach(alt_part)
 

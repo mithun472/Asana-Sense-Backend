@@ -101,6 +101,11 @@ async def record_activity(request, call_next):
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "ASANA-SENSE Backend is running"}
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "ASANA-SENSE FastAPI Backend", "version": "2.0.0"}
