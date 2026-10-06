@@ -72,6 +72,7 @@ FRONTEND_ORIGINS = [
     for origin in os.getenv("FRONTEND_ORIGIN", "http://localhost:3000").split(",")
     if origin.strip()
 ]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -100,11 +101,6 @@ async def record_activity(request, call_next):
     return response
 
 # ── Health ────────────────────────────────────────────────────────────────────
-
-@app.get("/")
-async def root():
-    return {"status": "ok", "message": "ASANA-SENSE Backend is running"}
-
 
 @app.get("/api/health")
 async def health():

@@ -146,10 +146,16 @@ async def load_or_compute_references(
     coll = reference_poses_collection()
 
     # Try loading from DB
+    expected = {c for c in CLASS_NAMES if c != "no_pose"}
+    force = os.getenv("REFRESH_REFERENCES", "") == "1"
     existing = await coll.find_one({"_id": "reference_poses_v1"})
-    if existing and "data" in existing:
-        print("[ReferencePoses] Loaded from MongoDB cache.")
-        return existing["data"]
+    if existing and "data" in existing and not force:
+        cached = existing["data"]
+        missing = expected - set(cached.keys())
+        if not missing:
+            print("[ReferencePoses] Loaded from MongoDB cache.")
+            return cached
+        print(f"[ReferencePoses] Cache incomplete (missing {sorted(missing)}); recomputing.")
 
     # Compute from CSV
     references = compute_reference_poses(csv_path)

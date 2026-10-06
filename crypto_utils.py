@@ -21,12 +21,16 @@ Key setup:
 import os
 import json
 import base64
+import logging
 from dotenv import load_dotenv
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 load_dotenv()
 
+logger = logging.getLogger("crypto_utils")
+
 _NONCE_LEN = 12  # 96-bit nonce, standard for AES-GCM
+_TAG_LEN = 16    # AES-GCM auth tag
 
 
 def _load_key() -> bytes:
@@ -68,11 +72,18 @@ def decrypt_str(token) -> str:
         return token
     try:
         raw = base64.urlsafe_b64decode(token.encode("utf-8"))
+    except Exception:
+        return token  # not base64 -> legacy plaintext
+    if len(raw) < _NONCE_LEN + _TAG_LEN:
+        return token  # too short to be our blob -> legacy plaintext
+    try:
         nonce, ct = raw[:_NONCE_LEN], raw[_NONCE_LEN:]
         return _aesgcm.decrypt(nonce, ct, None).decode("utf-8")
     except Exception:
-        # Legacy unencrypted value already stored in DB — pass through.
-        return token
+        # Looks like our blob but will not decrypt: wrong/rotated key or corruption.
+        # Do NOT leak ciphertext into the UI as if it were the user's name.
+        logger.error("decrypt_str failed on a value that looks encrypted (key mismatch or corrupt data)")
+        return ""
 
 
 def encrypt_bmi(data) -> str:

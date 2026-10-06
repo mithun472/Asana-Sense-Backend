@@ -3,12 +3,16 @@ TFLite pose classifier + landmark normalization + per-joint evaluation.
 Mirrors the exact normalization logic from yoga_pose_detector.py.
 """
 import os
+import math
+import logging
 import threading
 import numpy as np
 from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger("pose_engine")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 IDX_LEFT_HIP = 23
@@ -27,6 +31,12 @@ CONF_THRESHOLD = 0.6
 
 # Joint deviation threshold (in normalized units) to flag as misaligned
 JOINT_DEVIATION_THRESHOLD = 0.12
+
+# Floor for per-joint std when scoring (avoids division by ~0)
+MIN_STD = 0.02
+
+# Deviation assigned when math goes non-finite (treated as critical, JSON-safe)
+MAX_DEVIATION = 99.0
 
 # Human-readable names for the 33 MediaPipe landmarks
 LANDMARK_NAMES = [
@@ -80,7 +90,15 @@ class PoseEngine:
         self._lock = threading.Lock()
         self._input_details = None
         self._output_details = None
+        self._warned_missing: set = set()
         self._reference_poses: dict = {}  # {class_name: {mean: np.array, std: np.array}}
+
+    @property
+    def is_ready(self) -> bool:
+        return self._interpreter is not None
+
+    def has_reference(self, pose: str) -> bool:
+        return pose in self._reference_poses
 
     def load_model(self):
         """Load the TFLite model."""
@@ -107,10 +125,14 @@ class PoseEngine:
         """
         self._reference_poses = {}
         for class_name, data in references.items():
-            self._reference_poses[class_name] = {
-                "mean": np.array(data["mean"], dtype=np.float32),
-                "std": np.array(data["std"], dtype=np.float32),
-            }
+            mean = np.array(data["mean"], dtype=np.float32)
+            std = np.array(data["std"], dtype=np.float32)
+            if not (np.isfinite(mean).all() and np.isfinite(std).all()):
+                logger.warning("Reference for %s had NaN/inf values; sanitized.", class_name)
+            mean = np.nan_to_num(mean, nan=0.0, posinf=0.0, neginf=0.0)
+            std = np.nan_to_num(std, nan=0.05, posinf=0.05, neginf=0.05)
+            std = np.clip(std, MIN_STD, None)
+            self._reference_poses[class_name] = {"mean": mean, "std": std}
         print(f"[PoseEngine] Reference poses loaded for: {list(self._reference_poses.keys())}")
 
     @staticmethod
@@ -186,11 +208,18 @@ class PoseEngine:
             correction_message: human-readable correction cue
         """
         lm_xy = np.array(landmarks_xy, dtype=np.float32)
+        if not np.isfinite(lm_xy).all():
+            raise ValueError("Landmarks contain NaN/inf")
         normalized = self.normalize_landmarks(lm_xy)
 
         # If no reference for this pose, use classification confidence only
         ref = self._reference_poses.get(target_pose)
         if ref is None:
+            if target_pose not in self._warned_missing:
+                self._warned_missing.add(target_pose)
+                logger.warning(
+                    "No reference distribution for '%s' - joints cannot be scored.", target_pose
+                )
             return True, False, False, self._all_correct_joints(), ""
 
         mean = ref["mean"]
@@ -214,9 +243,12 @@ class PoseEngine:
             dy = abs(normalized[y_idx] - mean[y_idx])
 
             # Use std to scale: deviation = distance / max(std, epsilon)
-            sx = max(std[x_idx], 0.02)
-            sy = max(std[y_idx], 0.02)
+            sx = max(float(std[x_idx]), MIN_STD)
+            sy = max(float(std[y_idx]), MIN_STD)
             dev = float(np.sqrt((dx / sx) ** 2 + (dy / sy) ** 2))
+            if not math.isfinite(dev):
+                dev = MAX_DEVIATION
+            dev = min(dev, MAX_DEVIATION)
 
             # Thresholds:
             # dev < 2.0: correct (green)

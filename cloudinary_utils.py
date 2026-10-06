@@ -35,7 +35,7 @@ def configure_cloudinary():
         print(f"[Cloudinary] Configured for cloud: {cloud_name}")
         return True
     else:
-        print("[Cloudinary] Credentials loaded.")
+        print("[Cloudinary] WARNING: credentials not set; SDK not configured (static URLs still work).")
         return False
 
 

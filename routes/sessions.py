@@ -38,10 +38,19 @@ async def save_session(
     result = await coll.insert_one(session_doc)
 
     # Update user stats
-    all_sessions = await coll.find({"user_id": current_user["id"]}).to_list(100)
-    total_sess = len(all_sessions)
-    total_mins = round(sum(s.get("total_duration_seconds", 0) for s in all_sessions) / 60)
-    avg_score = round(sum(s.get("overall_accuracy", 0) for s in all_sessions) / max(total_sess, 1))
+    agg = await coll.aggregate([
+        {"$match": {"user_id": current_user["id"]}},
+        {"$group": {
+            "_id": None,
+            "count": {"$sum": 1},
+            "duration": {"$sum": {"$ifNull": ["$total_duration_seconds", 0]}},
+            "accuracy": {"$sum": {"$ifNull": ["$overall_accuracy", 0]}},
+        }},
+    ]).to_list(1)
+    totals = agg[0] if agg else {"count": 0, "duration": 0, "accuracy": 0}
+    total_sess = totals["count"]
+    total_mins = round(totals["duration"] / 60)
+    avg_score = round(totals["accuracy"] / max(total_sess, 1))
 
     await users.update_one(
         {"_id": ObjectId(current_user["id"])},

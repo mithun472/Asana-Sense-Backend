@@ -15,18 +15,41 @@ from email_service import send_session_report_email
 
 router = APIRouter(prefix="/api", tags=["Reports & AI Analysis"])
 
+# Simple per-user sliding-window limiter (in-memory, single process)
+_REPORT_WINDOW_S = 60
+_REPORT_MAX_CALLS = 6
+_report_calls: dict = {}
+
+
+def _check_rate_limit(user_id: str) -> None:
+    import time
+    now = time.time()
+    calls = [t for t in _report_calls.get(user_id, []) if now - t < _REPORT_WINDOW_S]
+    if len(calls) >= _REPORT_MAX_CALLS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many report requests. Try again in a minute.",
+        )
+    calls.append(now)
+    _report_calls[user_id] = calls
+
 
 @router.post("/generate-session-report")
-async def generate_session_report(payload: dict):
+async def generate_session_report(
+    payload: dict,
+    current_user: dict = Depends(get_current_user),
+):
     """Generate dynamic AI session report with Groq API and past session progress analysis."""
     session_data = payload.get("sessionData", {})
     prev_session_data = payload.get("previousSessionData")
-    groq_api_key = payload.get("groqApiKey") or os.getenv("GROQ_API_KEY")
+    _check_rate_limit(current_user["id"])
+    # Server-side key only. Never trust a key sent by the client.
+    groq_api_key = os.getenv("GROQ_API_KEY")
 
     # 1. Try Groq API if key is available
     if groq_api_key:
         try:
-            print("[Backend Groq AI] Calling llama-3.3-70b-versatile for human-understandable report...")
+            print("[Backend Groq AI] Calling openai/gpt-oss-20b for human-understandable report...")
             system_prompt = (
                 "You are Veda AI, an elite yoga therapist and warm master biomechanics coach for ASANA-SENSE.\n"
                 "Communicate in clear, human-understandable, natural language (avoid dense medical jargon).\n"
@@ -62,7 +85,7 @@ async def generate_session_report(payload: dict):
                 user_prompt += "First session (baseline certification)."
 
             req_body = json.dumps({
-                "model": "llama-3.3-70b-versatile",
+                "model": "openai/gpt-oss-20b",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -93,7 +116,7 @@ async def generate_session_report(payload: dict):
             # Strip markdown code blocks if present
             clean_json = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_content.strip(), flags=re.MULTILINE)
             parsed = json.loads(clean_json)
-            parsed["aiProvider"] = "Groq (Llama 3.3 70B)"
+            parsed["aiProvider"] = "openai/gpt-oss-20b"
             return {"success": True, "data": parsed}
         except Exception as e:
             print(f"[Backend Groq AI Error]: {e}")

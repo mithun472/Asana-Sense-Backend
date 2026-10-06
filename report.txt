@@ -1,0 +1,146 @@
+ASANA-SENSE BACKEND REPORT
+Generated: 2026-10-05
+
+======================================================================
+REPORT 1: RUNTIME DEPENDENCY CHAIN
+======================================================================
+
+Project root:
+  C:\asense
+
+Backend:
+  C:\asense\backend
+
+Virtual environment:
+  C:\asense\venv
+
+Python runtime:
+  Python 3.12.0
+  C:\asense\venv\Scripts\python.exe
+
+The project virtual environment was activated from the project root with:
+
+  cd C:\asense
+  .\venv\Scripts\Activate.ps1
+
+Dependency manifest:
+  C:\asense\backend\requirements.txt
+
+Declared backend dependencies:
+  fastapi>=0.110.0
+  uvicorn[standard]>=0.28.0
+  motor>=3.4.0
+  pymongo>=4.6.0
+  python-jose[cryptography]>=3.3.0
+  passlib[bcrypt]>=1.7.4
+  bcrypt>=4.0.0
+  cloudinary>=1.40.0
+  numpy>=1.26.0
+  pydantic>=2.6.0
+  python-dotenv>=1.0.1
+  websockets>=12.0
+  python-multipart>=0.0.9
+  pandas>=2.2.0
+  tensorflow>=2.16.0
+  reportlab>=4.0.0
+  cryptography>=42.0.0
+  email-validator>=2.1.0
+
+Important installed versions in the Python 3.12 virtual environment:
+  fastapi        0.141.1
+  uvicorn        0.52.4
+  motor          3.7.1
+  pymongo        4.18.0
+  python-jose    3.5.0
+  passlib        1.7.4
+  bcrypt         4.0.1
+  cloudinary     1.46.2
+  numpy          2.5.3
+  pydantic       2.13.5
+  python-dotenv  1.2.3
+  websockets     17.1
+  pandas         3.0.5
+  tensorflow     2.21.0
+  reportlab      5.0.1
+  cryptography   50.0.1
+  email-validator 2.3.0
+
+Dependency verification:
+  pip check: PASSED
+  Result: No broken requirements found.
+
+Import verification:
+  All declared backend imports resolved successfully in the project venv.
+
+Backend smoke test:
+  main module import: PASSED
+  FastAPI app title: ASANA-SENSE API
+  Registered routes: 11
+
+Note:
+  tflite_runtime is not installed in the project venv. The backend handles
+  this by falling back to TensorFlow Lite through the installed TensorFlow
+  package. The backend import and application smoke test both succeed.
+
+======================================================================
+REPORT 2: BACKEND MODEL AND AI PROVIDERS
+======================================================================
+
+Pose detection model:
+  yoga_pose_classifier.tflite
+
+Expected model location:
+  C:\asense\ml\models\yoga_pose_classifier.tflite
+
+The model path can also be overridden with:
+  TFLITE_MODEL_PATH
+
+Pose classes:
+  chair
+  cobra
+  dog
+  no_pose
+  shoulder_stand
+  triangle
+  tree
+  warrior
+
+Pose detection interpreter order in pose_engine.py:
+
+  1. Try tflite_runtime.interpreter
+  2. If tflite_runtime is unavailable, use tensorflow.lite.Interpreter
+
+Current runtime status:
+  tflite_runtime: unavailable
+  TensorFlow: installed
+  Effective fallback available: tensorflow.lite.Interpreter
+
+Important clarification:
+  The model file is a TensorFlow Lite model in both cases. Only the
+  interpreter implementation changes. The current code prefers the
+  standalone tflite_runtime package and uses TensorFlow Lite as fallback.
+
+Session report-generation model:
+  Provider: Groq API
+  Model: llama-3.3-70b-versatile
+  Source: routes/reports.py
+
+The Groq report path is used when GROQ_API_KEY is configured. If the key is
+missing or the API call fails, the backend uses local biomechanical heuristic
+analysis instead.
+
+Model summary:
+
+  Feature                  Main path                         Fallback
+  ---------------------------------------------------------------------------
+  Real-time pose detection yoga_pose_classifier.tflite       Same .tflite model
+                           via tflite_runtime                via TensorFlow Lite
+
+  Session reports          Groq openai/gpt-oss-20b     Local biomechanical
+                                                             heuristic analysis
+
+Relevant files:
+  C:\asense\backend\pose_engine.py
+  C:\asense\backend\routes\reports.py
+  C:\asense\backend\requirements.txt
+  C:\asense\backend\README.md

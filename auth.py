@@ -16,7 +16,12 @@ from crypto_utils import decrypt_str, decrypt_bmi
 
 load_dotenv()
 
-JWT_SECRET = os.getenv("JWT_SECRET", "asana-sense-default-secret-change-me")
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+if len(JWT_SECRET) < 32:
+    raise RuntimeError(
+        "JWT_SECRET missing or shorter than 32 chars. Generate one: "
+        "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+    )
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_MINUTES = int(os.getenv("JWT_EXPIRY_MINUTES", "1440"))  # 24 hours
 
@@ -72,12 +77,29 @@ async def get_current_user(
         )
 
     from bson import ObjectId
+    from bson.errors import InvalidId
 
-    user = await users_collection().find_one({"_id": ObjectId(user_id)})
-    if not user:
+    try:
+        oid = ObjectId(user_id)
+    except (InvalidId, TypeError):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = await users_collection().find_one({"_id": oid})
+    if not user:
+        # Token valid but account gone (deleted) -> unauthenticated, not 404
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.get("is_account_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated",
         )
 
     return {

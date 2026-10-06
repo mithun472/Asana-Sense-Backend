@@ -27,7 +27,9 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
-from database import users_collection
+from pymongo.errors import DuplicateKeyError
+
+from database import users_collection, sessions_collection
 from models import (
     SignUpRequest, SignInRequest, AuthResponse,
     UpdateProfileRequest,
@@ -42,6 +44,9 @@ from email_service import send_otp_email, send_welcome_email, send_password_rese
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 OTP_TTL_SECONDS = 600  # 10 minutes
+
+# Real bcrypt hash used to keep signin timing equal for unknown emails
+_DUMMY_HASH = hash_password("timing-equalizer-not-a-real-password")
 # { "email@example.com": { "otp": "123456", "expires_at": <ts>, "name": "...", "pwd_hash": "..." } }
 OTP_STORE: dict = {}
 
@@ -218,7 +223,14 @@ async def verify_otp(req: VerifyOtpRequest):
         "updated_at": now,
     }
 
-    result = await coll.insert_one(user_doc)
+    try:
+        result = await coll.insert_one(user_doc)
+    except DuplicateKeyError:
+        OTP_STORE.pop(email_key, None)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists. Please sign in.",
+        )
     user_id = str(result.inserted_id)
     OTP_STORE.pop(email_key, None)
 
@@ -297,16 +309,14 @@ async def signin(req: SignInRequest):
     coll = users_collection()
 
     user = await coll.find_one({"email": req.email.lower().strip()})
-    if not user:
+    # Same error + same work for unknown email and wrong password (no user enumeration).
+    # Dummy bcrypt hash of "x" keeps response time similar when the user does not exist.
+    stored_hash = user["password_hash"] if user else _DUMMY_HASH
+    pw_ok = await asyncio.to_thread(verify_password, req.password, stored_hash)
+    if not user or not pw_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No account found with this email.",
-        )
-
-    if not await asyncio.to_thread(verify_password, req.password, user["password_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password.",
+            detail="Invalid email or password.",
         )
 
     user_id = str(user["_id"])
@@ -506,6 +516,8 @@ async def delete_account(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found or already deleted.",
         )
+    # Remove the user's practice history too (no orphaned personal data)
+    await sessions_collection().delete_many({"user_id": user_id_str})
 
     return {
         "success": True,
