@@ -113,6 +113,7 @@ flowchart TD
 
 | Method | Endpoint | Auth | Purpose |
 |:---:|---|:---:|---|
+| 🟢 `GET` | `/` | — | Backend homepage / service information |
 | 🟢 `GET` | `/api/health` | — | Service health check |
 | 🟡 `POST` | `/api/auth/signup` | — | Create account |
 | 🟡 `POST` | `/api/auth/signin` | — | Login → JWT |

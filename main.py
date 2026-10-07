@@ -111,6 +111,19 @@ async def health():
 register_routes(app)
 
 
+# ── Homepage ──────────────────────────────────────────────────────────────────
+
+@app.get("/")
+async def homepage():
+    """Provide a useful response when the backend is opened at its root URL."""
+    return {
+        "service": "ASANA-SENSE FastAPI Backend",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/api/health",
+    }
+
+
 # ── Entry Point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
