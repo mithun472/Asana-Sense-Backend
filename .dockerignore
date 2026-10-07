@@ -1,0 +1,21 @@
+# Virtual environments
+venv
+**/venv
+.venv
+**/.venv
+
+# Secrets
+.env
+**/.env
+
+# Python junk
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+
+# VCS / editor
+.git
+.gitignore
+.vscode
+.idea

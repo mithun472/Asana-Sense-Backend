@@ -1,6 +1,11 @@
 """
 TFLite pose classifier + landmark normalization + per-joint evaluation.
 Mirrors the exact normalization logic from yoga_pose_detector.py.
+
+Interpreter priority (all run the same .tflite model):
+  1. ai_edge_litert  (Google LiteRT, lightweight, used in Docker/Render)
+  2. tflite_runtime  (legacy standalone runtime)
+  3. tensorflow.lite (full TensorFlow, local dev fallback)
 """
 import os
 import math
@@ -64,6 +69,38 @@ KEY_JOINT_INDICES = [
 ]
 
 
+def _create_interpreter(model_path: str):
+    """
+    Build a TFLite interpreter using the lightest available backend.
+    Returns: (interpreter, backend_name)
+    """
+    # 1. Google LiteRT (pip install ai-edge-litert)
+    try:
+        from ai_edge_litert.interpreter import Interpreter
+        return Interpreter(model_path=model_path), "ai_edge_litert"
+    except ImportError:
+        pass
+
+    # 2. Legacy standalone tflite_runtime
+    try:
+        from tflite_runtime.interpreter import Interpreter
+        return Interpreter(model_path=model_path), "tflite_runtime"
+    except ImportError:
+        pass
+
+    # 3. Full TensorFlow (local development only)
+    try:
+        import tensorflow as tf
+        return tf.lite.Interpreter(model_path=model_path), "tensorflow.lite"
+    except ImportError:
+        pass
+
+    raise RuntimeError(
+        "No TFLite interpreter available. Install one of: "
+        "ai-edge-litert (recommended), tflite-runtime, or tensorflow."
+    )
+
+
 class PoseEngine:
     """
     Loads the TFLite yoga pose classifier and provides:
@@ -86,6 +123,7 @@ class PoseEngine:
         else:
             self._model_path = env_path or "../yoga_pose_classifier.tflite"
         self._interpreter = None
+        self._backend_name: Optional[str] = None
         # TFLite interpreters are NOT thread-safe: serialize set_tensor/invoke/get_tensor.
         self._lock = threading.Lock()
         self._input_details = None
@@ -97,24 +135,24 @@ class PoseEngine:
     def is_ready(self) -> bool:
         return self._interpreter is not None
 
+    @property
+    def backend_name(self) -> Optional[str]:
+        """Which interpreter backend is in use (None until load_model succeeds)."""
+        return self._backend_name
+
     def has_reference(self, pose: str) -> bool:
         return pose in self._reference_poses
 
     def load_model(self):
-        """Load the TFLite model."""
-        try:
-            import tflite_runtime.interpreter as tflite
-            self._interpreter = tflite.Interpreter(model_path=self._model_path)
-        except ImportError:
-            # Fallback to full TensorFlow if tflite-runtime not installed
-            import tensorflow as tf
-            self._interpreter = tf.lite.Interpreter(model_path=self._model_path)
+        """Load the TFLite model (LiteRT -> tflite_runtime -> TensorFlow)."""
+        self._interpreter, self._backend_name = _create_interpreter(self._model_path)
 
         self._interpreter.allocate_tensors()
         self._input_details = self._interpreter.get_input_details()[0]
         self._output_details = self._interpreter.get_output_details()[0]
         print(
-            f"[PoseEngine] Model loaded — input shape: {self._input_details['shape']}, "
+            f"[PoseEngine] Model loaded via {self._backend_name} — "
+            f"input shape: {self._input_details['shape']}, "
             f"output classes: {len(CLASS_NAMES)}"
         )
 
