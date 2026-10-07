@@ -264,3 +264,11 @@ async def oauth_google(req: OAuthRequest):
 async def oauth_microsoft(req: OAuthRequest):
     email, name = await _verify_microsoft(req.credential)
     return await _sign_in_verified_email(email, name, "microsoft")
+
+@router.get("/oauth-debug")
+async def oauth_debug():
+    return {
+        "google_set": bool(os.getenv("GOOGLE_CLIENT_ID", "").strip()),
+        "microsoft_set": bool(os.getenv("MICROSOFT_CLIENT_ID", "").strip()),
+        "matching_keys": sorted(k for k in os.environ if "GOOGLE" in k.upper() or "MICROSOFT" in k.upper()),
+    }
