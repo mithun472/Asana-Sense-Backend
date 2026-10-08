@@ -1,13 +1,18 @@
 """
 Email & PDF generation service for ASANA - SENSE AI.
-Automatically sends certified session reports in PDF format via SMTP.
+Sends emails via the Brevo HTTPS API (works on Render) with SMTP as a fallback.
 """
+import base64
 import io
+import json
 import os
 import smtplib
+import urllib.error
+import urllib.request
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import parseaddr
 from datetime import datetime
 from html import escape
 
@@ -39,11 +44,73 @@ def _smtp_settings():
     }
 
 
+def _send_via_brevo(msg) -> tuple[bool, str]:
+    """Send an already-built MIME message through Brevo's HTTPS API (port 443)."""
+    api_key = os.getenv("BREVO_API_KEY", "").strip()
+    sender_name, sender_email = parseaddr(msg["From"])
+    _, to_email = parseaddr(msg["To"])
+
+    if not sender_email:
+        return False, "Sender email missing. Set SMTP_FROM_EMAIL to your verified Brevo sender."
+
+    text_body, html_body, attachments = None, None, []
+    for part in msg.walk():
+        if part.is_multipart():
+            continue
+        ctype = part.get_content_type()
+        if part.get_content_disposition() == "attachment":
+            attachments.append({
+                "name": part.get_filename() or "attachment",
+                "content": base64.b64encode(part.get_payload(decode=True)).decode(),
+            })
+        elif ctype == "text/plain" and text_body is None:
+            text_body = part.get_payload(decode=True).decode("utf-8", "replace")
+        elif ctype == "text/html" and html_body is None:
+            html_body = part.get_payload(decode=True).decode("utf-8", "replace")
+
+    payload = {
+        "sender": {"name": sender_name or "ASANA - SENSE AI", "email": sender_email},
+        "to": [{"email": to_email}],
+        "subject": msg["Subject"],
+        "htmlContent": html_body or f"<pre>{text_body or ''}</pre>",
+    }
+    if text_body:
+        payload["textContent"] = text_body
+    if attachments:
+        payload["attachment"] = attachments
+
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "api-key": api_key,
+            "content-type": "application/json",
+            "accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        print("[EmailService] Sending via Brevo HTTPS API...")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"[EmailService] Brevo accepted email (HTTP {resp.status})")
+            return True, "Email sent successfully"
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        print(f"[EmailService] Brevo error {e.code}: {detail}")
+        return False, f"Brevo error {e.code}: {detail}"
+    except Exception as e:
+        print(f"[EmailService] Brevo request failed: {e}")
+        return False, str(e)
+
+
 def _send_mime(msg) -> tuple[bool, str]:
-    """Shared SMTP connect/login/send used by every sender below."""
+    """Shared sender: Brevo HTTPS API if BREVO_API_KEY is set (required on Render), else SMTP."""
+    if os.getenv("BREVO_API_KEY", "").strip():
+        return _send_via_brevo(msg)
+
     s = _smtp_settings()
     if not s["user"] or not s["password"]:
-        return False, "SMTP credentials (SMTP_USER / SMTP_PASSWORD) are not configured in backend/.env"
+        return False, "Email not configured: set BREVO_API_KEY (recommended) or SMTP_USER / SMTP_PASSWORD"
     try:
         print(f"[EmailService] Connecting to SMTP server {s['host']}:{s['port']}...")
         if s["port"] == 465:
@@ -396,18 +463,15 @@ def send_session_report_email(
     ai_report: dict | None = None,
 ) -> tuple[bool, str]:
     """
-    Automated SMTP sender for ASANA - SENSE AI Session Reports.
+    Email sender for ASANA - SENSE AI Session Reports.
     Generates PDF and sends to recipient directly.
     """
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_USER", "").strip()
-    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
-    smtp_from = os.getenv("SMTP_FROM_EMAIL", smtp_user).strip() or smtp_user
-    smtp_from_name = os.getenv("SMTP_FROM_NAME", "ASANA - SENSE AI")
+    s = _smtp_settings()
+    smtp_from = s["from_email"]
+    smtp_from_name = s["from_name"]
 
-    if not smtp_user or not smtp_password:
-        return False, "SMTP credentials (SMTP_USER / SMTP_PASSWORD) are not configured in backend/.env"
+    if not os.getenv("BREVO_API_KEY", "").strip() and (not s["user"] or not s["password"]):
+        return False, "Email not configured: set BREVO_API_KEY (recommended) or SMTP_USER / SMTP_PASSWORD"
 
     if not to_email or "@" not in to_email:
         return False, f"Invalid destination email: {to_email}"
@@ -507,20 +571,8 @@ def send_session_report_email(
         )
         msg.attach(pdf_attachment)
 
-    # Send via SMTP
-    try:
-        print(f"[EmailService] Connecting to SMTP server {smtp_host}:{smtp_port}...")
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=12)
-        else:
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=12)
-            server.starttls()
-
-        server.login(smtp_user, smtp_password)
-        server.send_message(msg)
-        server.quit()
+    # Send (Brevo API or SMTP fallback)
+    success, message = _send_mime(msg)
+    if success:
         print(f"[EmailService] Session report successfully emailed to {to_email}")
-        return True, "Email sent successfully"
-    except Exception as e:
-        print(f"[EmailService] Failed to send email to {to_email}: {e}")
-        return False, str(e)
+    return success, message
