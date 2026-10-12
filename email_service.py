@@ -25,6 +25,38 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 EMAIL_LOGO_URL = "https://res.cloudinary.com/yhj7u0bn/image/upload/v1790602123/asana_sense_logo.png"
 
 
+def _report_text(value, fallback: str = "") -> str:
+    """Convert report values into safe, readable text for email/PDF output."""
+    if value is None:
+        return fallback
+    if isinstance(value, (str, int, float, bool)):
+        text = str(value).strip()
+        return text or fallback
+    if isinstance(value, list):
+        return ", ".join(
+            item for item in (_report_text(entry) for entry in value) if item
+        ) or fallback
+    if isinstance(value, dict):
+        for key in (
+            "text", "message", "description", "tip", "detail", "cue",
+            "title", "name", "label", "poseName",
+        ):
+            text = _report_text(value.get(key))
+            if text:
+                return text
+        return ", ".join(
+            item for item in (_report_text(entry) for entry in value.values()) if item
+        ) or fallback
+    return fallback
+
+
+def _report_items(value) -> list[str]:
+    if isinstance(value, list):
+        return [text for text in (_report_text(item) for item in value) if text]
+    text = _report_text(value)
+    return [text] if text else []
+
+
 def _email_logo_html() -> str:
     return (
         f'<img src="{EMAIL_LOGO_URL}" alt="ASANA-SENSE AI" '
@@ -372,12 +404,22 @@ def generate_session_pdf(
     story.append(metrics_table)
     story.append(Spacer(1, 14))
 
-    # AI Coach Boosting Message
+    # AI report sections shown by the frontend report view
     if ai_report:
-        boosting = ai_report.get("boostingMessage") or ai_report.get("boosting_message")
+        boosting = _report_text(ai_report.get("boostingMessage") or ai_report.get("boosting_message"))
+        comparison = _report_text(
+            ai_report.get("comparisonWithPrevious") or ai_report.get("comparison_with_previous")
+        )
+        teacher_note = _report_text(
+            ai_report.get("masterTeacherNote") or ai_report.get("master_teacher_note")
+        )
         if boosting:
             story.append(Paragraph("Master Coach Boosting Message", heading2_style))
-            story.append(Paragraph(f'"{boosting}"', quote_style))
+            story.append(Paragraph(f'"{escape(boosting)}"', quote_style))
+            story.append(Spacer(1, 8))
+        if comparison:
+            story.append(Paragraph("Comparison With Previous Session", heading2_style))
+            story.append(Paragraph(escape(comparison), body_style))
             story.append(Spacer(1, 8))
 
     # Poses Breakdown Table
@@ -422,27 +464,72 @@ def generate_session_pdf(
         story.append(poses_table)
         story.append(Spacer(1, 14))
 
-    # Biomechanical Strengths & Growth Areas
+    # Biomechanical strengths, growth areas, pose tips, and nutrition
     if ai_report:
-        strengths = ai_report.get("keyStrengths") or []
-        growths = ai_report.get("priorityGrowthAreas") or []
+        strengths = _report_items(ai_report.get("keyStrengths"))
+        growths = _report_items(ai_report.get("priorityGrowthAreas"))
 
         if strengths or growths:
             story.append(Paragraph("Biomechanical Insights & Alignment Focus", heading2_style))
             for s in strengths:
-                story.append(Paragraph(f"• <b>Key Strength:</b> {s}", body_style))
+                story.append(Paragraph(f"• <b>Key Strength:</b> {escape(s)}", body_style))
             for g in growths:
-                story.append(Paragraph(f"• <b>Growth Cue:</b> {g}", body_style))
+                story.append(Paragraph(f"• <b>Growth Cue:</b> {escape(g)}", body_style))
             story.append(Spacer(1, 10))
 
-        # Recovery Nutrition
-        nutrition = ai_report.get("fitnessNutrition") or {}
+        improvements = ai_report.get("poseImprovements") or ai_report.get("pose_improvements") or []
+        if isinstance(improvements, dict):
+            improvements = list(improvements.values())
+        if improvements:
+            story.append(Paragraph("How To Improve Your Poses", heading2_style))
+            for improvement in improvements:
+                if not isinstance(improvement, dict):
+                    continue
+                pose_name = escape(_report_text(improvement.get("poseName") or improvement.get("pose_name"), "Yoga Pose"))
+                current_status = escape(_report_text(improvement.get("currentStatus") or improvement.get("current_status")))
+                if current_status:
+                    story.append(Paragraph(f"<b>{pose_name}</b>: {current_status}", body_style))
+                else:
+                    story.append(Paragraph(f"<b>{pose_name}</b>", body_style))
+                tips = _report_items(improvement.get("actionableTips") or improvement.get("actionable_tips") or improvement.get("tips"))
+                for tip in tips:
+                    story.append(Paragraph(f"• {escape(tip)}", body_style))
+                safety = _report_text(improvement.get("jointSafetyCue") or improvement.get("joint_safety_cue") or improvement.get("safetyCue"))
+                if safety:
+                    story.append(Paragraph(f"<b>Joint safety:</b> {escape(safety)}", body_style))
+                story.append(Spacer(1, 5))
+
+        nutrition = ai_report.get("fitnessNutrition") or ai_report.get("fitness_nutrition") or {}
         if nutrition:
-            post = nutrition.get("immediatePostWorkout") or []
-            if post:
-                story.append(Paragraph("Post-Practice Recovery Nutrition", heading2_style))
-                story.append(Paragraph(f"Recommended recovery fuels: {', '.join(post)}", body_style))
+            nutrition_sections = (
+                ("Right After Practice", nutrition.get("immediatePostWorkout") or nutrition.get("immediate_post_workout")),
+                ("Daily Stamina Foods", nutrition.get("dailyStaminaFoods") or nutrition.get("daily_stamina_foods")),
+                ("Foods To Avoid", nutrition.get("foodsToAvoid") or nutrition.get("foods_to_avoid")),
+            )
+            if any(items for _, items in nutrition_sections):
+                story.append(Paragraph("Fitness & Yogic Nutrition", heading2_style))
+                for title, items in nutrition_sections:
+                    for item in _report_items(items):
+                        story.append(Paragraph(f"• <b>{escape(title)}:</b> {escape(item)}", body_style))
+                hydration = _report_text(nutrition.get("hydrationTip") or nutrition.get("hydration_tip"))
+                summary = _report_text(nutrition.get("dietSummary") or nutrition.get("diet_summary"))
+                if hydration:
+                    story.append(Paragraph(f"<b>Hydration:</b> {escape(hydration)}", body_style))
+                if summary:
+                    story.append(Paragraph(f"<b>Summary:</b> {escape(summary)}", body_style))
                 story.append(Spacer(1, 8))
+
+        recommended = _report_items(
+            ai_report.get("recommendedNextPoses") or ai_report.get("recommended_next_poses")
+        )
+        if recommended:
+            story.append(Paragraph("Recommended Next Asanas", heading2_style))
+            story.append(Paragraph(escape(", ".join(recommended)), body_style))
+            story.append(Spacer(1, 8))
+
+        if teacher_note:
+            story.append(Paragraph("Master Teacher Guidance", heading2_style))
+            story.append(Paragraph(f'"{escape(teacher_note)}"', quote_style))
 
     # Footer note
     story.append(Spacer(1, 14))
@@ -488,8 +575,82 @@ def send_session_report_email(
     mins = round(duration_secs / 60, 1)
 
     boosting_msg = ""
+    comparison_msg = ""
+    teacher_note = ""
+    report_sections = ""
     if ai_report:
-        boosting_msg = ai_report.get("boostingMessage") or ai_report.get("boosting_message") or ""
+        boosting_msg = _report_text(
+            ai_report.get("boostingMessage") or ai_report.get("boosting_message")
+        )
+        comparison_msg = _report_text(
+            ai_report.get("comparisonWithPrevious") or ai_report.get("comparison_with_previous")
+        )
+        teacher_note = _report_text(
+            ai_report.get("masterTeacherNote") or ai_report.get("master_teacher_note")
+        )
+
+        def html_list(items) -> str:
+            return "".join(f"<li>{escape(item)}</li>" for item in _report_items(items))
+
+        strengths = _report_items(ai_report.get("keyStrengths"))
+        growths = _report_items(ai_report.get("priorityGrowthAreas"))
+        improvements = ai_report.get("poseImprovements") or ai_report.get("pose_improvements") or []
+        if isinstance(improvements, dict):
+            improvements = list(improvements.values())
+
+        pose_html = ""
+        for improvement in improvements:
+            if not isinstance(improvement, dict):
+                continue
+            pose_name = escape(_report_text(improvement.get("poseName") or improvement.get("pose_name"), "Yoga Pose"))
+            status = escape(_report_text(improvement.get("currentStatus") or improvement.get("current_status")))
+            tips = html_list(
+                improvement.get("actionableTips")
+                or improvement.get("actionable_tips")
+                or improvement.get("tips")
+            )
+            safety = escape(_report_text(
+                improvement.get("jointSafetyCue")
+                or improvement.get("joint_safety_cue")
+                or improvement.get("safetyCue")
+            ))
+            pose_html += f"""
+              <div class="pose-section">
+                <h3>{pose_name}</h3>
+                {f'<p class="muted">{status}</p>' if status else ''}
+                {f'<ul>{tips}</ul>' if tips else ''}
+                {f'<p class="safety"><strong>Joint safety:</strong> {safety}</p>' if safety else ''}
+              </div>
+            """
+
+        nutrition = ai_report.get("fitnessNutrition") or ai_report.get("fitness_nutrition") or {}
+        immediate = _report_items(nutrition.get("immediatePostWorkout") or nutrition.get("immediate_post_workout"))
+        daily = _report_items(nutrition.get("dailyStaminaFoods") or nutrition.get("daily_stamina_foods"))
+        avoid = _report_items(nutrition.get("foodsToAvoid") or nutrition.get("foods_to_avoid"))
+        hydration = escape(_report_text(nutrition.get("hydrationTip") or nutrition.get("hydration_tip")))
+        diet_summary = escape(_report_text(nutrition.get("dietSummary") or nutrition.get("diet_summary")))
+        recommended = _report_items(
+            ai_report.get("recommendedNextPoses") or ai_report.get("recommended_next_poses")
+        )
+
+        report_sections = f"""
+        {f'<section><h2>Session Progress Comparison</h2><p>{escape(comparison_msg)}</p></section>' if comparison_msg else ''}
+        {f'<section><h2>Where You Improved Most</h2><ul>{html_list(strengths)}</ul></section>' if strengths else ''}
+        {f'<section><h2>Priority Areas Needing Improvement</h2><ul>{html_list(growths)}</ul></section>' if growths else ''}
+        {f'<section><h2>How To Improve Your Poses</h2>{pose_html}</section>' if pose_html else ''}
+        {f'''
+        <section>
+          <h2>Fitness &amp; Yogic Nutrition</h2>
+          {f'<h3>Right After Practice</h3><ul>{html_list(immediate)}</ul>' if immediate else ''}
+          {f'<h3>Daily Stamina Foods</h3><ul>{html_list(daily)}</ul>' if daily else ''}
+          {f'<h3>Foods To Avoid</h3><ul>{html_list(avoid)}</ul>' if avoid else ''}
+          {f'<p><strong>Hydration:</strong> {hydration}</p>' if hydration else ''}
+          {f'<p><strong>Summary:</strong> {diet_summary}</p>' if diet_summary else ''}
+        </section>
+        ''' if immediate or daily or avoid or hydration or diet_summary else ''}
+        {f'<section><h2>Recommended Next Asanas</h2><p>{escape(", ".join(recommended))}</p></section>' if recommended else ''}
+        {f'<section><h2>Master Teacher Guidance</h2><div class="quote">"{escape(teacher_note)}"</div></section>' if teacher_note else ''}
+        """
 
     # Build Multipart Email Message
     msg = MIMEMultipart("mixed")
@@ -514,6 +675,15 @@ def send_session_report_email(
         .stat-item {{ background: #fdfbf7; border: 1px solid #e7e5e4; border-radius: 14px; padding: 14px; text-align: center; flex: 1; }}
         .stat-value {{ font-size: 20px; font-weight: bold; color: #047857; }}
         .stat-label {{ font-size: 10px; text-transform: uppercase; color: #78716c; margin-top: 4px; }}
+        section {{ margin-top: 24px; }}
+        h2 {{ color: #047857; font-size: 16px; border-left: 4px solid #10b981; padding-left: 10px; }}
+        h3 {{ color: #292524; font-size: 14px; margin: 14px 0 6px; }}
+        ul {{ padding-left: 22px; line-height: 1.6; }}
+        li {{ margin-bottom: 6px; font-size: 13px; }}
+        .muted {{ color: #78716c; font-size: 12px; }}
+        .pose-section {{ border: 1px solid #e7e5e4; border-radius: 10px; padding: 10px 14px; margin: 10px 0; }}
+        .safety {{ background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; color: #92400e; font-size: 12px; }}
+        .quote {{ background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 16px; border-radius: 0 12px 12px 0; font-style: italic; }}
         .footer {{ text-align: center; font-size: 11px; color: #a8a29e; margin-top: 24px; padding-top: 16px; border-top: 1px solid #f5f5f4; }}
       </style>
     </head>
@@ -543,8 +713,10 @@ def send_session_report_email(
           </div>
         </div>
 
+        {report_sections}
+
         <p style="font-size: 13px; line-height: 1.6; color: #44403c;">
-          Your full <strong>Certified Yoga Biomechanics Master Report (PDF)</strong> is attached to this email. You can keep it for your personal wellness logs or review it before your next session on mat.
+          Your full <strong>Certified Yoga Biomechanics Master Report (PDF)</strong> is attached to this email. This email contains the same AI report sections shown in your ASANA-SENSE session report.
         </p>
 
         <div class="footer">
@@ -557,7 +729,28 @@ def send_session_report_email(
     """
 
     alt_part = MIMEMultipart("alternative")
-    alt_part.attach(MIMEText(f"Vanakkam {user_name},\n\nYour ASANA-SENSE practice session ({accuracy}% accuracy, {mins} mins) has been certified. Your official PDF report is attached to this email.", "plain"))
+    plain_report = [
+        f"Vanakkam {user_name},",
+        "",
+        f"Your ASANA-SENSE practice session ({accuracy}% accuracy, {mins} mins) has been certified.",
+        "",
+        f"AI Boosting Message: {boosting_msg}" if boosting_msg else "",
+        f"Session Progress Comparison: {comparison_msg}" if comparison_msg else "",
+    ]
+    if ai_report:
+        plain_report.extend([
+            "",
+            "Key Strengths:",
+            *[f"- {item}" for item in _report_items(ai_report.get("keyStrengths"))],
+            "",
+            "Priority Growth Areas:",
+            *[f"- {item}" for item in _report_items(ai_report.get("priorityGrowthAreas"))],
+        ])
+    plain_report.extend([
+        "",
+        "The complete frontend-equivalent report is included below in HTML and attached as a PDF.",
+    ])
+    alt_part.attach(MIMEText("\n".join(plain_report), "plain"))
     alt_part.attach(MIMEText(html_content, "html"))
     msg.attach(alt_part)
 
