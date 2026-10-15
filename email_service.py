@@ -173,9 +173,15 @@ def send_welcome_email(to_email: str, user_name: str) -> tuple[bool, str]:
 
     plain_content = (
         f"Vanakkam, {user_name or 'Yogi'},\n\n"
-        "Welcome to ASANA-SENSE AI! We are glad to have you with us. "
-        "Your personalized yoga practice and biomechanics coaching journey starts now.\n\n"
-        "Keep showing up, breathe steadily, and enjoy your practice.\n\n"
+        "Welcome to ASANA-SENSE AI! Your personal yoga practice and movement coaching journey starts now.\n\n"
+        "Here is how to use ASANA-SENSE AI effectively:\n"
+        "1. Choose a yoga pose or practice that matches your goal.\n"
+        "2. Follow the on-screen guidance and position yourself where your full body is visible to the camera.\n"
+        "3. Move slowly and steadily while keeping your breathing relaxed.\n"
+        "4. Use the live posture feedback to improve your alignment and technique.\n"
+        "5. Review your session insights after practice and use the recommendations to improve over time.\n\n"
+        "Start with comfortable sessions, listen to your body, and practice consistently. "
+        "ASANA-SENSE AI is here to help you build safer, more effective yoga habits.\n\n"
         "With warmth,\nASANA-SENSE AI"
     )
     html_content = f"""
@@ -185,8 +191,16 @@ def send_welcome_email(to_email: str, user_name: str) -> tuple[bool, str]:
       <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e7e5e4; border-radius: 16px; padding: 32px;">
                 {_email_logo_html()}
         <h1 style="color: #047857; margin-top: 0;">Vanakkam, {safe_name}!</h1>
-        <p>Welcome to <strong>ASANA-SENSE AI</strong>. We are glad to have you with us.</p>
-        <p>Your personalized yoga practice and biomechanics coaching journey starts now. Keep showing up, breathe steadily, and enjoy your practice.</p>
+        <p>Welcome to <strong>ASANA-SENSE AI</strong>! Your personal yoga practice and movement coaching journey starts now.</p>
+        <p>To get the most from your practice:</p>
+        <ol style="padding-left: 24px; line-height: 1.6;">
+          <li>Choose a yoga pose or practice that matches your goal.</li>
+          <li>Follow the on-screen guidance and position yourself so your full body is visible to the camera.</li>
+          <li>Move slowly and steadily while keeping your breathing relaxed.</li>
+          <li>Use the live posture feedback to improve your alignment and technique.</li>
+          <li>Review your session insights and recommendations after practice.</li>
+        </ol>
+        <p>Start with comfortable sessions, listen to your body, and practice consistently. <strong>ASANA-SENSE AI</strong> is here to help you build safer, more effective yoga habits.</p>
         <p style="margin-bottom: 0;">With warmth,<br><strong>ASANA-SENSE AI</strong></p>
       </div>
     </body>
